@@ -104,7 +104,39 @@ export const cast: typeof defaultCast = (field, value) => {
     return typeof value === 'string' && value.length ? decodeUtf8(value) : value
   }
 
+  // PlanetScale returns datetime values as strings without timezone info.
+  // We need to treat them as UTC to match the behavior of other adapters.
+  if (isDateOrTime(field.type) && typeof value === 'string' && value.length) {
+    return normalizeDateTime(value)
+  }
+
   return defaultCast(field, value)
+}
+
+function isDateOrTime(type: string): boolean {
+  return type === 'DATETIME' || type === 'DATE' || type === 'TIMESTAMP' || type === 'TIME'
+}
+
+function normalizeDateTime(dt: string): string {
+  // If the datetime string already has a timezone, return as-is
+  if (dt.includes('Z') || dt.includes('+') || /\d{2}:\d{2}:\d{2}.*-\d/.test(dt)) {
+    return dt
+  }
+
+  // For TIME values (just time, no date), prepend epoch date and add Z
+  if (/^\d{2}:\d{2}:\d{2}/.test(dt) && !dt.includes('-')) {
+    return `1970-01-01T${dt}Z`
+  }
+
+  // For DATE values (just date, no time), append midnight UTC
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dt)) {
+    return `${dt}T00:00:00Z`
+  }
+
+  // For DATETIME values, replace space with T and append Z
+  // Format: "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DD HH:MM:SS.fff"
+  const normalized = dt.replace(' ', 'T')
+  return `${normalized}Z`
 }
 
 export function mapArg<A>(arg: A | Date, argType: ArgType): null | BigInt | string | Uint8Array | A {
